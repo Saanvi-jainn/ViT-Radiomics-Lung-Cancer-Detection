@@ -60,3 +60,7 @@ results/
 *.tmp
 *.temp
 .cache/
+
+# Cache directories
+radiomics_cache/
+vit_features_cache/

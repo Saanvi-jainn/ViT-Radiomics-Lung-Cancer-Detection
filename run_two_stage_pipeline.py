@@ -35,8 +35,9 @@ class TwoStagePipeline:
         print("STEP 1: LOADING AND PREPROCESSING DATA")
         print("=" * 80)
         
-        # Load original dataset
-        self.image_paths, self.labels = load_dataset(self.config['data_path'])
+        # Load balanced dataset (4,500 images)
+        balanced_data_path = 'data/balanced_dataset'
+        self.image_paths, self.labels = load_dataset(balanced_data_path)
         print(f"Loaded {len(self.image_paths)} images")
         
         # Extract radiomics features
@@ -833,7 +834,7 @@ def main():
     # Training arguments
     parser.add_argument('--epochs', type=int, default=60, 
                        help='Number of training epochs')
-    parser.add_argument('--batch-size', type=int, default=32, 
+    parser.add_argument('--batch-size', type=int, default=16, 
                        help='Batch size')
     parser.add_argument('--learning-rate', type=float, default=3e-4, 
                        help='Learning rate')
