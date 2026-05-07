@@ -8,7 +8,8 @@ import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, auc, roc_auc_score
+from sklearn.preprocessing import label_binarize
 from utils.preprocessing import load_dataset, get_data_transforms
 from utils.extract_radiomics_complete import extract_radiomics_for_dataset
 from models.vit_model import create_vit_model
@@ -198,15 +199,36 @@ def test_improved_model():
     print(f"PERFORMANCE GRADE: {grade}")
     print(f"CLINICAL ASSESSMENT: {comment}")
     
-    # Generate and save confusion matrix heatmap
-    print(f"\nGENERATING CONFUSION MATRIX HEATMAP")
+    # Generate and save confusion matrix heatmap and ROC curves
+    print(f"\nGENERATING VISUALIZATIONS")
     print("=" * 80)
     
     # Create output directory if it doesn't exist
     output_dir = Path('outputs/improved_pipeline')
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Plot confusion matrix
+    # Get prediction probabilities for ROC curves
+    y_score = np.zeros((len(test_labels), 3))
+    
+    for i in range(len(test_labels)):
+        if stage1_preds[i] == 0:  # Predicted as Normal
+            y_score[i, 2] = stage1_probs[i, 0]  # Normal probability
+            y_score[i, 0] = (1 - stage1_probs[i, 0]) * 0.5  # Split remaining
+            y_score[i, 1] = (1 - stage1_probs[i, 0]) * 0.5
+        else:  # Predicted as Abnormal
+            if i < len(stage2_preds):
+                y_score[i, 0] = stage2_probs[i, 0]  # Benign probability
+                y_score[i, 1] = stage2_probs[i, 1]  # Malignant probability
+                y_score[i, 2] = stage1_probs[i, 1] * 0.1  # Small Normal prob
+            else:
+                y_score[i, 0] = 0.5
+                y_score[i, 1] = 0.5
+                y_score[i, 2] = 0.1
+    
+    # Normalize probabilities
+    y_score = y_score / y_score.sum(axis=1, keepdims=True)
+    
+    # Generate confusion matrix heatmap (separate image)
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                xticklabels=['Benign', 'Malignant', 'Normal'],
@@ -224,13 +246,154 @@ def test_improved_model():
     
     plt.tight_layout()
     
-    # Save the heatmap
+    # Save the confusion matrix
     cm_path = output_dir / 'confusion_matrix_heatmap.png'
     plt.savefig(cm_path, dpi=300, bbox_inches='tight', facecolor='white')
     plt.show()
     
-    print(f"   Confusion matrix heatmap saved to: {cm_path}")
+    print(f"   Confusion matrix saved to: {cm_path}")
+    
+    # Generate ROC curves (separate image)
+    # Binarize labels for multi-class ROC
+    y_test_bin = label_binarize(test_labels, classes=[0, 1, 2])
+    n_classes = 3
+    
+    # Calculate ROC curve and ROC area for each class
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    
+    for i in range(n_classes):
+        fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_score[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+    
+    # Plot ROC curves
+    plt.figure(figsize=(10, 8))
+    class_names = ['Benign', 'Malignant', 'Normal']
+    colors = ['blue', 'red', 'green']
+    
+    for i, color, name in zip(range(n_classes), colors, class_names):
+        plt.plot(fpr[i], tpr[i], color=color, lw=2,
+                label=f'{name} (AUC = {roc_auc[i]:.3f})')
+    
+    plt.plot([0, 1], [0, 1], 'k--', lw=2)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate', fontsize=14, fontweight='bold')
+    plt.ylabel('True Positive Rate', fontsize=14, fontweight='bold')
+    plt.title('Lung Cancer Detection - ROC Curves', fontsize=16, fontweight='bold', pad=20)
+    plt.legend(loc="lower right", fontsize=12)
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save the ROC curves
+    roc_path = output_dir / 'roc_curves.png'
+    plt.savefig(roc_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.show()
+    
+    print(f"   ROC curves saved to: {roc_path}")
+    print(f"   High-resolution images ready for presentation")
+    
+    # Generate performance metrics graph
+    print(f"\nGENERATING PERFORMANCE METRICS GRAPH")
+    print("=" * 80)
+    
+    # Calculate per-class metrics (reuse from earlier calculation)
+    class_names = ['Benign', 'Malignant', 'Normal']
+    
+    # Benign
+    benign_precision = cm[0,0] / (cm[0,0] + cm[1,0] + cm[2,0]) * 100 if (cm[0,0] + cm[1,0] + cm[2,0]) > 0 else 0
+    benign_recall = cm[0,0] / (cm[0,0] + cm[0,1] + cm[0,2]) * 100 if (cm[0,0] + cm[0,1] + cm[0,2]) > 0 else 0
+    benign_f1 = 2 * (benign_precision * benign_recall) / (benign_precision + benign_recall) if (benign_precision + benign_recall) > 0 else 0
+    
+    # Malignant
+    malignant_precision = cm[1,1] / (cm[0,1] + cm[1,1] + cm[2,1]) * 100 if (cm[0,1] + cm[1,1] + cm[2,1]) > 0 else 0
+    malignant_recall = cm[1,1] / (cm[1,0] + cm[1,1] + cm[1,2]) * 100 if (cm[1,0] + cm[1,1] + cm[1,2]) > 0 else 0
+    malignant_f1 = 2 * (malignant_precision * malignant_recall) / (malignant_precision + malignant_recall) if (malignant_precision + malignant_recall) > 0 else 0
+    
+    # Normal
+    normal_precision = cm[2,2] / (cm[0,2] + cm[1,2] + cm[2,2]) * 100 if (cm[0,2] + cm[1,2] + cm[2,2]) > 0 else 0
+    normal_recall = cm[2,2] / (cm[2,0] + cm[2,1] + cm[2,2]) * 100 if (cm[2,0] + cm[2,1] + cm[2,2]) > 0 else 0
+    normal_f1 = 2 * (normal_precision * normal_recall) / (normal_precision + normal_recall) if (normal_precision + normal_recall) > 0 else 0
+    
+    # Overall metrics
+    overall_precision = (benign_precision + malignant_precision + normal_precision) / 3
+    overall_recall = (benign_recall + malignant_recall + normal_recall) / 3
+    overall_f1 = (benign_f1 + malignant_f1 + normal_f1) / 3
+    
+    # Create performance metrics graph
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+    
+    # Per-class metrics (left subplot)
+    metrics = ['Precision', 'Recall', 'F1-Score']
+    x = np.arange(len(class_names))
+    width = 0.25
+    
+    benign_metrics = [benign_precision, benign_recall, benign_f1]
+    malignant_metrics = [malignant_precision, malignant_recall, malignant_f1]
+    normal_metrics = [normal_precision, normal_recall, normal_f1]
+    
+    bars1 = ax1.bar(x - width, benign_metrics, width, label='Benign', color='skyblue', alpha=0.8)
+    bars2 = ax1.bar(x, malignant_metrics, width, label='Malignant', color='lightcoral', alpha=0.8)
+    bars3 = ax1.bar(x + width, normal_metrics, width, label='Normal', color='lightgreen', alpha=0.8)
+    
+    ax1.set_xlabel('Metrics', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Score (%)', fontsize=12, fontweight='bold')
+    ax1.set_title('Per-Class Performance Metrics', fontsize=14, fontweight='bold', pad=20)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(metrics)
+    ax1.legend(loc='upper right')
+    ax1.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bars in [bars1, bars2, bars3]:
+        for bar in bars:
+            height = bar.get_height()
+            ax1.annotate(f'{height:.1f}%',
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3),
+                        textcoords="offset points",
+                        ha='center', va='bottom', fontsize=9)
+    
+    # Overall performance comparison (right subplot)
+    categories = ['Overall\nAccuracy', 'Overall\nPrecision', 'Overall\nRecall', 'Overall\nF1-Score']
+    values = [final_acc, overall_precision, overall_recall, overall_f1]
+    colors = ['gold', 'skyblue', 'lightcoral', 'lightgreen']
+    
+    bars = ax2.bar(categories, values, color=colors, alpha=0.8)
+    ax2.set_ylabel('Score (%)', fontsize=12, fontweight='bold')
+    ax2.set_title('Overall Model Performance', fontsize=14, fontweight='bold', pad=20)
+    ax2.set_ylim(0, 100)
+    ax2.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bar in bars:
+        height = bar.get_height()
+        ax2.annotate(f'{height:.1f}%',
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    # Save the performance metrics graph
+    metrics_path = output_dir / 'performance_metrics_graph.png'
+    plt.savefig(metrics_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.show()
+    
+    print(f"   Performance metrics graph saved to: {metrics_path}")
     print(f"   High-resolution image ready for presentation")
+    
+    # Print ROC AUC values
+    print(f"\nROC AUC VALUES:")
+    for i, name in enumerate(class_names):
+        print(f"   {name}: {roc_auc[i]:.3f}")
+    
+    # Calculate macro-average AUC
+    macro_auc = np.mean(list(roc_auc.values()))
+    print(f"   Macro-average: {macro_auc:.3f}")
     
     # Calculate per-class metrics
     print(f"\nPER-CLASS PERFORMANCE METRICS")
