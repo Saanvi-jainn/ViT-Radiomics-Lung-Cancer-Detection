@@ -129,8 +129,12 @@ def test_improved_model():
     stage1_probs = stage1_metrics['ensemble_probs']
     stage1_preds = np.argmax(stage1_probs, axis=1)
     stage1_acc = stage1_metrics['ensemble_accuracy'] * 100
+    stage1_vit_acc = stage1_metrics['vit_accuracy'] * 100
+    stage1_rad_acc = stage1_metrics['radiomics_accuracy'] * 100
     
     print(f"   Accuracy: {stage1_acc:.2f}%")
+    print(f"   ViT Accuracy: {stage1_vit_acc:.2f}%")
+    print(f"   Radiomics Accuracy: {stage1_rad_acc:.2f}%")
     print(f"   Test Samples: {len(test_stage1_labels):,}")
     
     # Test Stage 2
@@ -153,8 +157,12 @@ def test_improved_model():
         stage2_probs = stage2_metrics['ensemble_probs']
         stage2_preds = np.argmax(stage2_probs, axis=1)
         stage2_acc = stage2_metrics['ensemble_accuracy'] * 100
+        stage2_vit_acc = stage2_metrics['vit_accuracy'] * 100
+        stage2_rad_acc = stage2_metrics['radiomics_accuracy'] * 100
         
         print(f"   Accuracy: {stage2_acc:.2f}%")
+        print(f"   ViT Accuracy: {stage2_vit_acc:.2f}%")
+        print(f"   Radiomics Accuracy: {stage2_rad_acc:.2f}%")
         print(f"   Test Samples: {len(stage2_true):,}")
     else:
         stage2_acc = 0
